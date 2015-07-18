@@ -47,6 +47,9 @@ include ../Version.mk
 APPSRC += $(TARGET_DIR).c
 APPSRC += common.c
 APPSRC += flash.c
+APPSRC += SMBus.c
+APPSRC += SensorUtil.c
+APPSRC += AM2320.c
 
 ### Target type
 # アプリケーション(.bin)をビルドするか、ライブラリ(.a)にするか指定します。
@@ -92,7 +95,7 @@ include ../../../../MkFiles/toconet.mk
 # 下記に指定したディレクトリがソース検索パス、インクルード検索パスに設定
 # されます。Makefile のあるディレクトリからの相対パスを指定します。
 #
-#APP_COMMON_SRC_DIR_ADD1 = ../dummy1  
+APP_COMMON_SRC_DIR_ADD1 = ../../Common/Source/Sensors
 #APP_COMMON_SRC_DIR_ADD2 = 
 #APP_COMMON_SRC_DIR_ADD3 = 
 #APP_COMMON_SRC_DIR_ADD4 =
