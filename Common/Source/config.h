@@ -29,8 +29,8 @@ extern "C" {
 #define UART_PORT			E_AHI_UART_0
 
 /* Specify the PAN ID and CHANNEL to be used by tags, readers and gateway */
-#define APP_ID              0x67726304
-#define APP_NAME            "Samp_Wayback"
+#define APP_ID              0x39393939
+#define APP_NAME            "OpenSmartDevice"
 #define CHANNEL             12
 //#define CHMASK              ((1UL << CHANNEL) | (1UL << (CHANNEL+5)) | (1UL << (CHANNEL+10)))
 #define CHMASK              (1UL << CHANNEL)

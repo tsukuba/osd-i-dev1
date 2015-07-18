@@ -120,8 +120,8 @@ PUBLIC void cbAppColdStart(bool_t bAfterAhiInit) {
 
 	} else {
 		// disable brown out detect
-		vAHI_BrownOutConfigure(0, //0:2.0V 1:2.3V
-				FALSE, FALSE, FALSE, FALSE);
+		//vAHI_BrownOutConfigure(0, //0:2.0V 1:2.3V
+		//		FALSE, FALSE, FALSE, FALSE);
 
 		// clear application context
 		memset(&sAppData, 0x00, sizeof(sAppData));
@@ -144,13 +144,6 @@ PUBLIC void cbAppColdStart(bool_t bAfterAhiInit) {
 
 		// Others
 		vInitHardware(FALSE);
-
-		// START UP MESSAGE
-		vfPrintf(&sSerStream, "\r\n*** " APP_NAME " %d.%02d-%d ***",
-				VERSION_MAIN, VERSION_SUB, VERSION_VAR);
-		vfPrintf(&sSerStream, LB "* App ID:%08x Long Addr:%08x Short Addr %04x",
-				sToCoNet_AppContext.u32AppId, ToCoNet_u32GetSerial(),
-				sToCoNet_AppContext.u16ShortAddress);
 	}
 }
 
@@ -168,7 +161,7 @@ void cbAppWarmStart(bool_t bAfterAhiInit) {
  */
 void cbToCoNet_vMain(void) {
 	/* handle uart input */
-	vHandleSerialInput();
+	//vHandleSerialInput();
 }
 
 /**
@@ -201,88 +194,9 @@ void cbToCoNet_vNwkEvent(teEvent eEvent, uint32 u32arg) {
  * @param pRx 受信データ構造体
  */
 PUBLIC void cbToCoNet_vRxEvent(tsRxDataApp *pRx) {
-	//int i;
-	// uint8 *p = pRx->auData;
-
+	// ここでUART出力
+	// CRC16確認する
 	pRx->auData[pRx->u8Len] = 0;
-	V_PRINTF(LB"!RX(cmd=%d hop=%d 1stLq=%d)\"%s\""LB,
-			pRx->u8Cmd,
-			pRx->u8Hops,
-			pRx->u8Lqi1St,
-			pRx->auData);
-
-#if 0
-	if (pRx->u8Cmd == TOCONET_PACKET_CMD_APP_DATA) {
-		// Turn on LED
-		sAppData.u32LedCt = u32TickCount_ms;
-
-		// LED の点灯を行う
-		sAppData.u16LedDur_ct = 125;
-
-		// 子機アドレスの取り出し"T:%04X:%08X:%02X"
-		uint32 u32Data = u32string2hex(pRx->auData + 1 + 1, 4);
-		uint32 u32AddrDev = u32string2hex(pRx->auData + 1 + 1 + 4 + 1, 8);
-
-		// データベースへ登録（線形配列に格納している）
-		ADDRKEYA_vAdd(&sEndDevList, u32AddrDev, u32Data);
-
-		// データの解釈
-		uint8 u8b = pRx->auData[0];
-		if (u8b == 'R' || u8b == 'T') {
-			if (u8b == 'R') {
-				// ルータからの受信
-				V_PRINTF("::%08X", pRx->u32SrcAddr);
-			} else {
-				// 親機のアドレスを表示
-				V_PRINTF("::%08X", TOCONET_NWK_ADDR_PARENT);
-			}
-
-			// データの表示
-			for (i = 1; i < pRx->u8Len; i++) {
-				V_PUTCHAR(pRx->auData[i]);
-			}
-
-			// LQI の表示
-			if (u8b == 'T') {
-				V_PRINTF(":%03d", pRx->u8Lqi);
-			}
-			V_PRINTF(LB);
-		}
-
-		// 送信要求
-		{
-			sAppData.u16frame_count++;
-
-			tsTxDataApp sTx;
-			memset(&sTx, 0, sizeof(sTx)); // 必ず０クリアしてから使う！
-
-			sTx.u32SrcAddr = ToCoNet_u32GetSerial();
-			sTx.u32DstAddr = pRx->u32SrcAddr; // 送り返す
-
-			// ペイロードの準備
-			SPRINTF_vRewind();
-			vfPrintf(SPRINTF_Stream, "DOWN_DATA(%04d, cmd=%d) from %08X", sAppData.u16frame_count, pRx->u8Cmd, ToCoNet_u32GetSerial());
-			memcpy (sTx.auData, SPRINTF_pu8GetBuff(), SPRINTF_u16Length());
-			sTx.auData[SPRINTF_u16Length()] = 0; // 明示的に終端する
-
-			sTx.u8Len = SPRINTF_u16Length() + 1; // パケットのサイズ
-			sTx.u8CbId = sAppData.u16frame_count & 0xFF; // TxEvent で通知される番号、送信先には通知されない
-			sTx.u8Seq = sAppData.u16frame_count & 0xFF; // シーケンス番号(送信先に通知される)
-			sTx.u8Cmd = 0; // 0..7 の値を取る。パケットの種別を分けたい時に使用する
-
-#ifdef USE_AES
-			sTx.bSecurePacket = TRUE;
-#endif
-
-
-			if (ToCoNet_Nwk_bTx(sAppData.pContextNwk, &sTx)) {
-				V_PRINTF(LB"! TxOk");
-			} else {
-				V_PRINTF(LB"! TxFl");
-			}
-		}
-	}
-#endif //0
 }
 
 /**
@@ -303,25 +217,7 @@ void cbToCoNet_vTxEvent(uint8 u8CbId, uint8 bStatus) {
  * @param u32DeviceId
  * @param u32ItemBitmap
  */
-void cbToCoNet_vHwEvent(uint32 u32DeviceId, uint32 u32ItemBitmap) {
-	switch (u32DeviceId) {
-	case E_AHI_DEVICE_TICK_TIMER:
-		// LED の点灯消灯を制御する
-		if (sAppData.u16LedDur_ct) {
-			sAppData.u16LedDur_ct--;
-			if (sAppData.u16LedDur_ct) {
-				vPortSet_TrueAsLo(PORT_KIT_LED1, TRUE);
-			}
-		} else {
-			vPortSet_TrueAsLo(PORT_KIT_LED1, FALSE);
-		}
-
-		break;
-
-	default:
-		break;
-	}
-}
+void cbToCoNet_vHwEvent(uint32 u32DeviceId, uint32 u32ItemBitmap) { }
 
 /**
  * ハードウェア割り込み
@@ -388,106 +284,7 @@ static void vSerialInit(void) {
  * シリアルポートの入力
  * - + + + シーケンスにより１バイトコマンドを入力できるようにする
  */
-static void vHandleSerialInput(void) {
-	// handle UART command
-	while (!SERIAL_bRxQueueEmpty(sSerPort.u8SerialPort)) {
-		int16 i16Char;
-
-		i16Char = SERIAL_i16RxChar(sSerPort.u8SerialPort);
-
-		uint8 u8res = u8ParseSerCmd(&sSerCmd, (uint8) i16Char);
-		if (u8res == E_SERCMD_VERBOSE) {
-			vfPrintf(&sSerStream, "\n\rVERBOSE MODE = %s",
-					bSerCmd_VerboseMode ? "ON" : "OFF");
-			continue;
-		}
-		if (!bSerCmd_VerboseMode)
-			continue;
-
-		V_PRINTF("\n\r# [%c] --> ", i16Char);
-		SERIAL_vFlush(sSerStream.u8Device);
-
-		switch (i16Char) {
-
-		case '>':
-		case '.':
-			/* channel up */
-			sAppData.u8channel++;
-			if (sAppData.u8channel > 26)
-				sAppData.u8channel = 11;
-			sToCoNet_AppContext.u8Channel = sAppData.u8channel;
-			ToCoNet_vRfConfig();
-			V_PRINTF("set channel to %d.", sAppData.u8channel);
-			break;
-
-		case '<':
-		case ',':
-			/* channel down */
-			sAppData.u8channel--;
-			if (sAppData.u8channel < 11)
-				sAppData.u8channel = 26;
-			sToCoNet_AppContext.u8Channel = sAppData.u8channel;
-			ToCoNet_vRfConfig();
-			V_PRINTF("set channel to %d.", sAppData.u8channel);
-			break;
-
-		case 'd':
-		case 'D':
-			_C {
-				static uint8 u8DgbLvl;
-
-				u8DgbLvl++;
-				if (u8DgbLvl > 5)
-					u8DgbLvl = 0;
-				ToCoNet_vDebugLevel(u8DgbLvl);
-
-				V_PRINTF("set NwkCode debug level to %d.", u8DgbLvl);
-			}
-			break;
-
-		/* 指定メッセージプール(1-7)にダミーデータを格納する
-		 * データ設定と EMPTY 設定のトグルを行う
-		 * */
-		case '1': case '2':case '3':case '4':
-		case '5': case '6':case '7':
-			_C {
-				static bool_t bSlot[8];
-
-				uint8 au8pl[TOCONET_MOD_MESSAGE_POOL_MAX_MESSAGE];
-					// メッセージプールの最大バイト数は 64 なので、これに収まる数とする。
-				uint8 *q = au8pl;
-
-				uint8 u8slot = i16Char - '0';
-				bSlot[u8slot] = bSlot[u8slot] ? FALSE : TRUE;
-
-				if (bSlot[u8slot]) {
-					// データ設定
-					S_OCTET('0' + u8slot);
-					S_OCTET('A'); // ダミーデータ(不要：テスト目的)
-					S_OCTET('B');
-					S_OCTET('C');
-					S_OCTET('D');
-
-					ToCoNet_MsgPl_bSetMessage(u8slot, 0, q - au8pl, au8pl);
-
-					V_PRINTF("set Slot %d.", u8slot);
-				} else {
-					// EMPTY 設定
-					ToCoNet_MsgPl_bSetMessage(u8slot, 0, 0, NULL);
-
-					V_PRINTF("unset Slot %d.", u8slot);
-				}
-			}
-			break;
-
-		default:
-			break;
-		}
-
-		V_PRINTF("\n\r");
-		SERIAL_vFlush(sSerStream.u8Device);
-	}
-}
+static void vHandleSerialInput(void) { }
 
 /**
  * アプリケーション主要処理
@@ -510,7 +307,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 	switch (pEv->eState) {
 	case E_STATE_IDLE:
 		if (eEvent == E_EVENT_START_UP) {
-			V_PRINTF(LB"[E_STATE_IDLE]");
+			//V_PRINTF(LB"[E_STATE_IDLE]");
 
 #ifdef USE_AES
 			ToCoNet_bRegisterAesKey((void*)au8EncKey, NULL);
@@ -535,7 +332,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 
 	case E_STATE_RUNNING:
 		if (eEvent == E_EVENT_NEW_STATE) {
-			V_PRINTF(LB"[E_STATE_RUNNING]");
+			//V_PRINTF(LB"[E_STATE_RUNNING]");
 		} else if (eEvent == E_EVENT_TICK_SECOND) {
 			static uint8 u8Ct_s = 0;
 			int i;
@@ -557,7 +354,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 					ToCoNet_MsgPl_bSetMessage(1, 0, 8, (uint8*)"01234567");
 					ToCoNet_MsgPl_bSetMessage(2, 0, 0, NULL);
 					ToCoNet_MsgPl_bSetMessage(3, 0, 0, (uint8*)"abcdefgh");
-					V_PRINTF(LB"! MsgPl Clean");
+					//V_PRINTF(LB"! MsgPl Clean");
 				} else {
 					uint8 au8pl[TOCONET_MOD_MESSAGE_POOL_MAX_MESSAGE];
 						// メッセージプールの最大バイト数は 64 なので、これに収まる数とする。
@@ -591,7 +388,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 					ToCoNet_MsgPl_bSetMessage(2, 0, q - au8pl, au8pl);
 					ToCoNet_MsgPl_bSetMessage(3, 0, 0, NULL);
 
-					V_PRINTF(LB"! MsgPl Set");
+					//V_PRINTF(LB"! MsgPl Set");
 				}
 
 				u8Ct_s = 0;
