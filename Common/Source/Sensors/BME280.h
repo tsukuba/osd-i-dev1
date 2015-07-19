@@ -25,4 +25,4 @@ typedef enum {
 
 // Exportする分
 bool_t GetData_BME280(BME280Data *data);
-uint8 ToArray_BME2800(BME280Data *data, uint8 *output, uint8 startidx);
+uint8 ToArray_BME280(BME280Data *data, uint8 *output, uint8 startidx);

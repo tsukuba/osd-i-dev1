@@ -196,6 +196,6 @@ bool_t GetData_BME280(BME280Data *data) {
 	return TRUE;
 }
 
-uint8 ToArray_BME2800(BME280Data *data, uint8 *output, uint8 startidx) {
+uint8 ToArray_BME280(BME280Data *data, uint8 *output, uint8 startidx) {
 	return FALSE;
 }
