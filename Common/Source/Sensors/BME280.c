@@ -197,5 +197,22 @@ bool_t GetData_BME280(BME280Data *data) {
 }
 
 uint8 ToArray_BME280(BME280Data *data, uint8 *output, uint8 startidx) {
-	return FALSE;
+	uint8 start = startidx;
+	// Temp
+	output[start++] = data->Temp & 0xFF;
+	output[start++] = data->Temp >> 8;
+	output[start++] = data->Temp >> 16;
+	output[start++] = data->Temp >> 24;
+	// Humidity
+	output[start++] = data->Humidity & 0xFF;
+	output[start++] = data->Humidity >> 8;
+	output[start++] = data->Humidity >> 16;
+	output[start++] = data->Humidity >> 24;
+	// Pressure
+	output[start++] = data->Pressure & 0xFF;
+	output[start++] = data->Pressure >> 8;
+	output[start++] = data->Pressure >> 16;
+	output[start++] = data->Pressure >> 24;
+	// 差分=書き込んだ分
+	return startidx - start;
 }
