@@ -13,6 +13,7 @@
 #include "serialInputMgr.h"
 
 #include "ToCoNet.h"
+#define ZeroMemory(Destination,Length) memset((Destination),0,(Length))
 
 void vDispInfo(tsFILE *psSerStream, tsToCoNet_NwkLyTr_Context *pc);
 

@@ -20,6 +20,24 @@ uint16 CRC16Calc(uint8 *pu8Data, uint8 len) {
 	return crc;
 }
 
+uint16 CRC16_CCITT(uint8 *data, uint8 len) {
+	uint16 crc = 0xFFFF;
+	uint8 i, j;
+
+	for (i = 0; i < len; i++) {
+		crc ^= (uint16)(data[i] << 8);
+		for (j = 0; j < 8; j++) {
+			if ((crc & 0x8000) != 0) {
+				crc = (uint16)((crc << 1) ^ 0x1021);
+			} else {
+				crc <<= 1;
+			}
+		}
+	}
+
+	return crc;
+}
+
 // 指定したコマンドを書くだけ
 bool_t WriteI2CSingleByte(uint8 addr, uint8 cmd, uint8 data) {
 	return  bSMBusWrite(addr, cmd, 1, &data);

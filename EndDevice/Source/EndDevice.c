@@ -43,6 +43,12 @@
 #include "fprintf.h"
 #include "sprintf.h"
 
+// Sensor
+#include "SensorUtil.h"
+#include "AM2320.h"
+#include "BME280.h"
+#include "LPS331.h"
+
 /****************************************************************************/
 /***        ToCoNet Definitions                                           ***/
 /****************************************************************************/
@@ -88,6 +94,12 @@ typedef enum {
 	E_NWK_MSG_GOT_MASK = 8
 
 } teNwStat;
+
+typedef enum {
+	E_APP_HELLO = 1,
+	E_APP_SEND_DATA = 2
+} teAppStat;
+
 typedef struct {
 	// ToCoNet version
 	uint32 u32ToCoNetVersion;
@@ -110,6 +122,7 @@ typedef struct {
 
 	// NW STATE
 	int8 i8NwState; // ネットワークの状態フラグ
+	int8 i8AppState;
 	uint8 u8MsgMsk; // メッセージプールのマスク
 
 	// 失敗カウント
@@ -259,6 +272,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 
 		if (sAppData.i8NwState == E_NWK_START) {
 			ToCoNet_Event_SetState(pEv, E_STATE_RUNNING);
+			sAppData.i8AppState = E_APP_HELLO;
 		} else if (sAppData.i8NwState == E_NWK_FAIL) {
 			V_PRINTF(LB"! CONNECTION FAILS");
 			ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
@@ -273,40 +287,89 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 		 * 実行状態
 		 */
 		if (eEvent == E_EVENT_NEW_STATE) {
-			V_PRINTF(LB"[E_STATE_RUNNING]");
-
 			sAppData.u16frame_count++; // 続き番号を更新する
+			if (sAppData.i8AppState == E_APP_HELLO) {
+				tsTxDataApp sTx;
+				uint8 packet[11];
+				ZeroMemory(packet, sizeof(packet));
 
-			tsTxDataApp sTx;
-			memset(&sTx, 0, sizeof(sTx)); // 必ず０クリアしてから使う！
+				packet[0] = 0x39; // header
+				packet[1] = 0x00; // op1
+				packet[2] = 0x00; // op2
+				packet[3] = 0x04; // len1
+				packet[4] = 0x00; // len2
+				packet[5] = 0x01; // dev type1
+				packet[6] = 0x00; // dev type2
+				packet[7] = 0x01; // dev id 1
+				packet[8] = 0x00; // dev id 2
+				uint16 crc = CRC16Calc(packet, 9);
+				packet[9] = crc & 0xFF;
+				packet[10] = crc >> 8;
 
-			sTx.u32SrcAddr = ToCoNet_u32GetSerial();
-			sTx.u32DstAddr = TOCONET_NWK_ADDR_PARENT;
+				sTx.u32SrcAddr = ToCoNet_u32GetSerial();
+				sTx.u32DstAddr = TOCONET_NWK_ADDR_PARENT;
+				memcpy(sTx.auData, packet, sizeof(packet));
+				sTx.u8Len = sizeof(packet); // パケットのサイズ
+				sTx.u8CbId = sAppData.u16frame_count & 0xFF; // TxEvent で通知される番号、送信先には通知されない
+				sTx.u8Seq = sAppData.u16frame_count & 0xFF; // シーケンス番号(送信先に通知される)
+				sTx.u8Cmd = 0; // 0..7 の値を取る。パケットの種別を分けたい時に使用する
 
-			// ペイロードの準備
-			SPRINTF_vRewind();
-			vfPrintf(SPRINTF_Stream, "T:%04X:%08X:%02X:%s",
-					sAppData.u16frame_count,
-					ToCoNet_u32GetSerial(),
-					sAppData.sFlash.sData.u16Id,
-					"012345678901234567890123456789012345678901234567890123456789");
-			memcpy (sTx.auData, SPRINTF_pu8GetBuff(), SPRINTF_u16Length());
+	#ifdef USE_AES
+				sTx.bSecurePacket = TRUE;
+	#endif
+				sAppData.u8MsgMsk = (1 << 0) | (1 << 1) | (1 << 2); // pool #0,1,2
+				if (ToCoNet_MsgPl_bRequest_w_Payload_to_Parenet(0x80 | sAppData.u8MsgMsk, &sTx)) {
+					V_PRINTF(LB"! TxSucc");
+					ToCoNet_Event_SetState(pEv, E_STATE_APP_WAIT_TX);
+					sAppData.i8AppState = E_APP_SEND_DATA;
+				} else {
+					V_PRINTF(LB"! TxFl");
+					ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
+				}
+			} else if (sAppData.i8AppState == E_APP_SEND_DATA) {
+				tsTxDataApp sTx;
+				uint8 packet[60];
+				uint8 ptr;
 
-			sTx.u8Len = SPRINTF_u16Length(); // パケットのサイズ
-			sTx.u8CbId = sAppData.u16frame_count & 0xFF; // TxEvent で通知される番号、送信先には通知されない
-			sTx.u8Seq = sAppData.u16frame_count & 0xFF; // シーケンス番号(送信先に通知される)
-			sTx.u8Cmd = 0; // 0..7 の値を取る。パケットの種別を分けたい時に使用する
+				ZeroMemory(packet, sizeof(packet));
+				ptr = 0;
+				memset(&sTx, 0, sizeof(sTx)); // 必ず０クリアしてから使う！
 
-#ifdef USE_AES
-			sTx.bSecurePacket = TRUE;
-#endif
-			sAppData.u8MsgMsk = (1 << 0) | (1 << 1) | (1 << 2); // pool #0,1,2
-			if (ToCoNet_MsgPl_bRequest_w_Payload_to_Parenet(0x80 | sAppData.u8MsgMsk, &sTx)) {
-				V_PRINTF(LB"! TxOk");
-				ToCoNet_Event_SetState(pEv, E_STATE_APP_WAIT_TX);
-			} else {
-				V_PRINTF(LB"! TxFl");
-				ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
+				sTx.u32SrcAddr = ToCoNet_u32GetSerial();
+				sTx.u32DstAddr = TOCONET_NWK_ADDR_PARENT;
+
+				// ペイロードの準備
+				packet[ptr++] = 0x39;
+				packet[ptr++] = 0x02;
+				packet[ptr++] = 0x00;
+				packet[ptr++] = 0x06;
+				packet[ptr++] = 0x00;
+				packet[ptr++] = 0x01;
+				AM2320Data d;
+				V_PRINTF(LB "AM: %d, %d" LB, d.Humidity, d.Temp);
+				ZeroMemory(&d, sizeof(d));
+				GetData_AM2320(&d);
+				ptr += ToArray_AM2320(&d, packet, ptr);
+				uint16 crc = CRC16Calc(packet, ptr);
+				packet[ptr++] = crc & 0xFF;
+				packet[ptr++] = crc >> 8;
+				memcpy(sTx.auData, packet, sizeof(uint8) * ptr);
+				sTx.u8Len = sizeof(uint8) * ptr;
+				sTx.u8CbId = sAppData.u16frame_count & 0xFF; // TxEvent で通知される番号、送信先には通知されない
+				sTx.u8Seq = sAppData.u16frame_count & 0xFF; // シーケンス番号(送信先に通知される)
+				sTx.u8Cmd = 0; // 0..7 の値を取る。パケットの種別を分けたい時に使用する
+
+	#ifdef USE_AES
+				sTx.bSecurePacket = TRUE;
+	#endif
+				sAppData.u8MsgMsk = (1 << 0) | (1 << 1) | (1 << 2); // pool #0,1,2
+				if (ToCoNet_MsgPl_bRequest_w_Payload_to_Parenet(0x80 | sAppData.u8MsgMsk, &sTx)) {
+					V_PRINTF(LB"! TxSucc");
+					ToCoNet_Event_SetState(pEv, E_STATE_APP_WAIT_TX);
+				} else {
+					V_PRINTF(LB"! TxFl");
+					ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
+				}
 			}
 		}
 		break;

@@ -33,6 +33,8 @@
 
 #include "common.h"
 
+#include "SensorUtil.h"
+
 /****************************************************************************/
 /***        ToCoNet Definitions                                           ***/
 /****************************************************************************/
@@ -89,7 +91,7 @@ tsAdrKeyA_Context sEndDevList;
 static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg);
 static void vInitHardware(int f_warm_start);
 static void vSerialInit(void);
-static void vHandleSerialInput(void);
+//static void vHandleSerialInput(void);
 
 /****************************************************************************/
 /***        Exported Variables                                            ***/
@@ -196,7 +198,47 @@ void cbToCoNet_vNwkEvent(teEvent eEvent, uint32 u32arg) {
 PUBLIC void cbToCoNet_vRxEvent(tsRxDataApp *pRx) {
 	// ここでUART出力
 	// CRC16確認する
-	pRx->auData[pRx->u8Len] = 0;
+	uint8 *data = pRx->auData;
+	uint8 out_data[80];
+	uint8 ptr = 0;
+	uint8 i;
+
+	// magic id
+	if (data[0] == 0x39) {
+		out_data[ptr++] = 0x99;
+
+		uint16 len = data[4] << 8 | data[3];
+		uint16 pos = 1+2+2+len+2; // magic+op(2b)+len(2b)+payload+crc
+		uint16 crc = CRC16Calc(data, pos);
+		uint16 r_crc = data[pos+2] << 8 | data[pos+1];
+		if (crc != r_crc) {
+			out_data[ptr++] = 0x98; // 2
+			out_data[ptr++] = 2+1+4+1+pos+2; // 3 (magic(2) + 1(size) + 4(Addr) + 1(LQI) + pos + CRC16(2))
+			out_data[ptr++] = pRx->u32SrcAddr & 0xFF; // 3
+			out_data[ptr++] = pRx->u32SrcAddr >> 8; // 4
+			out_data[ptr++] = pRx->u32SrcAddr >> 16; // 5
+			out_data[ptr++] = pRx->u32SrcAddr >> 24; // 6
+			out_data[ptr++] = pRx->u8Lqi; // 7
+
+			for (i = 0; i < pos; i++) {
+				out_data[ptr++] = data[i];
+			}
+			crc = CRC16_CCITT(out_data, ptr);
+			out_data[ptr++] = crc & 0xFF;
+			out_data[ptr++] = crc >> 8;
+		} else {
+			// CRCおかしい
+			out_data[ptr++] = 0x97;
+		}
+
+		for (i = 0; i < ptr; i++) {
+			SERIAL_bTxChar(UART_PORT, out_data[i]);
+		}
+	} else {
+		// パケットそもそもおかしい
+		SERIAL_bTxChar(UART_PORT, 0x99);
+		SERIAL_bTxChar(UART_PORT, 0x96);
+	}
 }
 
 /**
@@ -284,7 +326,7 @@ static void vSerialInit(void) {
  * シリアルポートの入力
  * - + + + シーケンスにより１バイトコマンドを入力できるようにする
  */
-static void vHandleSerialInput(void) { }
+//static void vHandleSerialInput(void) { }
 
 /**
  * アプリケーション主要処理
@@ -307,7 +349,6 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 	switch (pEv->eState) {
 	case E_STATE_IDLE:
 		if (eEvent == E_EVENT_START_UP) {
-			//V_PRINTF(LB"[E_STATE_IDLE]");
 
 #ifdef USE_AES
 			ToCoNet_bRegisterAesKey((void*)au8EncKey, NULL);
