@@ -1,5 +1,4 @@
 /* AM2320 Source */
-#include "SensorUtil.h"
 #include "AM2320.h"
 
 bool_t GetData_AM2320(AM2320Data *data) {

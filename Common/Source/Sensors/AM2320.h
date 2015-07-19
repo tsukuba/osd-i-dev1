@@ -1,6 +1,5 @@
 /* AM2320 Header */
-
-#include <jendefs.h>
+#include "SensorUtil.h"
 
 #define AM2320_ADDR (0x5C)
 
