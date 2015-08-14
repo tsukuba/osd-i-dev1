@@ -5,20 +5,21 @@ bool_t GetData_AM2320(AM2320Data *data) {
 	uint8 Cmd[2];
 	uint8 Read[8];
 	bool_t bOk = TRUE;
+	int x;
 
 	ZeroMemory(Cmd, sizeof(Cmd));
 	ZeroMemory(Read, sizeof(Read));
 
 	bSMBusWrite(AM2320_ADDR, 0, 0, NULL);
+	for (x = 0; x < 1600; x++) {;}
 
-	// wait?
 	Cmd[0] = 0x00;
 	Cmd[1] = 0x04;
-
 	bOk = bSMBusWrite(AM2320_ADDR, 0x03, 2, Cmd);
-	if (bOk != TRUE) return FALSE;
+	for (x = 0; x < 1600; x++) {;}
 
 	bSMBusSequentialRead(AM2320_ADDR, 8, Read);
+
 	uint16 crc, calc_crc;
 	crc = (Read[7] << 8) | Read[6];
 	calc_crc = CRC16Calc(Read, 6);
