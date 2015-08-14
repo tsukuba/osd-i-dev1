@@ -1,4 +1,6 @@
 /* BME280 Sensor */
+#ifndef BME280_H_
+#define BME280_H_
 #include "SensorUtil.h"
 
 #define BME280_ADDR (0x76)
@@ -26,3 +28,4 @@ typedef enum {
 // Exportする分
 bool_t GetData_BME280(BME280Data *data);
 uint8 ToArray_BME280(BME280Data *data, uint8 *output, uint8 startidx);
+#endif /* BME280_H_ */
