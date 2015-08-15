@@ -52,6 +52,7 @@ APPSRC += SensorUtil.c
 APPSRC += AM2320.c
 APPSRC += BME280.c
 APPSRC += LPS331.c
+APPSRC += PacketBuilder.c
 
 ### Target type
 # アプリケーション(.bin)をビルドするか、ライブラリ(.a)にするか指定します。

@@ -50,6 +50,8 @@
 #include "BME280.h"
 #include "LPS331.h"
 
+#include "PacketBuilder.h"
+
 /****************************************************************************/
 /***        ToCoNet Definitions                                           ***/
 /****************************************************************************/
@@ -58,7 +60,7 @@
 #define ToCoNet_USE_MOD_NBSCAN // Neighbour scan module
 #define ToCoNet_USE_MOD_NBSCAN_SLAVE
 #define ToCoNet_USE_MOD_CHANNEL_MGR
-#define ToCoNet_USE_MOD_NWK_MESSAGE_POOL
+//#define ToCoNet_USE_MOD_NWK_MESSAGE_POOL
 
 // includes
 #include "ToCoNet.h"
@@ -75,7 +77,7 @@
 
 #define TOCONET_DEBUG_LEVEL 0 // スタックデバッグメッセージ
 
-#define SLEEP_DUR_ms 2000
+#define SLEEP_DUR_ms 5000
 #undef NO_SLEEP
 
 /****************************************************************************/
@@ -162,7 +164,7 @@ void ShowBinary(uint8 *bin, uint8 len) {
 	uint8 x;
 	V_PRINTF(LB"-- SHOWBIN ---"LB);
 	for (x = 0; x < len; x++) {
-		V_PRINTF("%0x", bin[x]);
+		V_PRINTF("%02x ", bin[x]);
 	}
 	V_PRINTF(LB "------" LB);
 }
@@ -191,7 +193,6 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 				// 暗号化鍵の登録
 				bAesRes = ToCoNet_bRegisterAesKey((void*)au8EncKey, NULL);
 #endif
-
 				if (bNoSleepReinit || (u32evarg & EVARG_START_UP_WAKEUP_RAMHOLD_MASK)) {
 					// 起床メッセージ
 					vfPrintf(&sSerStream, LB LB "*** Warm starting Addr:%08x woke by %s. ***",
@@ -257,9 +258,8 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 				// SCAN開始
 				vfPrintf(&sSerStream, LB LB "* start end device[%d]", u32TickCount_ms & 0xFFFF);
 				sAppData.sNwkLayerTreeConfig.u8Role = TOCONET_NWK_ROLE_ENDDEVICE;
-				//sAppData.sNwkLayerTreeConfig.u8ResumeOpt = 0x01; // レジューム時にLOCATE&SCANしない
-				//sAppData.sNwkLayerTreeConfig.u8Second_To_Relocate = 0xFF; // LOCATE しない
-				sAppData.sNwkLayerTreeConfig.u8Second_To_Relocate = 0x03;
+				sAppData.sNwkLayerTreeConfig.u8ResumeOpt = 0x01; // レジューム時にLOCATE&SCANしない
+				sAppData.sNwkLayerTreeConfig.u8Second_To_Relocate = 0xFF; // LOCATE しない
 
 				// ネットワークの初期化
 				sAppData.i8NwState = E_NWK_IDLE;
@@ -304,8 +304,10 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 			sAppData.u16frame_count++; // 続き番号を更新する
 			tsTxDataApp sTx;
 			uint8 packet[80];
+			uint8 data[50];
 			uint8 ptr = 0;
 			ZeroMemory(packet, sizeof(packet));
+			ZeroMemory(data, sizeof(data));
 			ZeroMemory(&sTx, sizeof(sTx));
 
 			sTx.u32SrcAddr = ToCoNet_u32GetSerial();
@@ -313,22 +315,29 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 
 				if (sAppData.i8AppState == E_APP_HELLO) {
 					V_PRINTF(LB"[E_APP_HELLO]");
-					packet[ptr++] = 0x39; // header
-					packet[ptr++] = 0x00; // op1
-					packet[ptr++] = 0x00; // op2
-					packet[ptr++] = 0x04; // len1
-					packet[ptr++] = 0x00; // len2
-					packet[ptr++] = 0x01; // dev type1
-					packet[ptr++] = 0x00; // dev type2
-					packet[ptr++] = 0x01; // dev id 1
-					packet[ptr++] = 0x00; // dev id 2
-					uint16 crc = CRC16Calc(packet, 9);
-					packet[ptr++] = crc & 0xFF;
-					packet[ptr++] = crc >> 8;
+					// dev type (uint16)
+					data[0] = 0x01;
+					data[1] = 0x00;
+					// dev id (uint16)
+					data[2] = 0x01;
+					data[3] = 0x00;
+					ptr = BuildPacket(0x0, data, 4, packet);
 					memcpy(sTx.auData, packet, sizeof(uint8) * ptr);
 					sTx.u8Len = sizeof(uint8) * ptr; // パケットのサイズ
 				} else if (sAppData.i8AppState == E_APP_SEND_DATA) {
-					// ペイロードの準備
+					BME280Data b;
+					ZeroMemory(&b, sizeof(b));
+					data[ptr++] = 0x02;
+					data[ptr++] = 0x00;
+					ShowBinary(data, ptr);
+					if (GetData_BME280(&b) == FALSE) {
+						V_PRINTF("ERROR GET");
+					}
+					V_PRINTF("%d, %d, %d", b.Humidity, b.Pressure, b.Temp);
+					ptr += ToArray_BME280(&b, data, ptr);
+					ShowBinary(data, ptr);
+					ptr = BuildPacket(2, data, ptr, packet);
+					/*// ペイロードの準備
 					packet[ptr++] = 0x39; // head
 					packet[ptr++] = 0x02; //op1
 					packet[ptr++] = 0x00; //op2
@@ -338,12 +347,15 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 					packet[ptr++] = 0x00; //sid2
 					AM2320Data d;
 					ZeroMemory(&d, sizeof(d));
-					GetData_AM2320(&d);
+					int x;
+					for (x = 0; x <= 5; x++) {
+						if (GetData_AM2320(&d) == TRUE) break;
+					}
 					//V_PRINTF(LB "AM: %d, %d" LB, d.Humidity, d.Temp);
 					ptr += ToArray_AM2320(&d, packet, ptr);
 					uint16 crc = CRC16Calc(packet, ptr);
 					packet[ptr++] = crc & 0xFF;
-					packet[ptr++] = crc >> 8;
+					packet[ptr++] = crc >> 8;*/
 					ShowBinary(packet, ptr);
 					memcpy(sTx.auData, packet, sizeof(uint8)*ptr);
 					sTx.u8Len = sizeof(uint8) * ptr; // パケットのサイズ
@@ -379,7 +391,7 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 			ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
 		} else
 		if (ToCoNet_Event_u32TickFrNewState(pEv) > 1000) {
-			V_PRINTF(LB"! TIMEOUT (%d)", ToCoNet_Event_u32TickFrNewState(pEv));
+			V_PRINTF(LB"[I] SLEEP.... (%d)", ToCoNet_Event_u32TickFrNewState(pEv));
 			ToCoNet_Event_SetState(pEv, E_STATE_APP_SLEEP);
 		}
 		break;
@@ -433,12 +445,6 @@ static void vProcessEvCoreConfig(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) 
 	switch (pEv->eState) {
 		case E_STATE_IDLE:
 			if (eEvent == E_EVENT_START_UP) {
-				vfPrintf(&sSerStream, LB "*** ToCoSamp IO Monitor %d.%02d-%d ***", VERSION_MAIN, VERSION_SUB, VERSION_VAR);
-				vfPrintf(&sSerStream, LB "* App ID:%08x Long Addr:%08x Short Addr %04x",
-						sToCoNet_AppContext.u32AppId, ToCoNet_u32GetSerial(), sToCoNet_AppContext.u16ShortAddress);
-				vfPrintf(&sSerStream, LB "* start end device config mode...", u32TickCount_ms & 0xFFFF);
-				vfPrintf(&sSerStream, LB "* - press 0-9 to set local ID");
-
 				ToCoNet_Event_SetState(pEv, E_STATE_RUNNING);
 			}
 			break;
@@ -607,60 +613,6 @@ void cbToCoNet_vNwkEvent(teEvent eEvent, uint32 u32arg) {
 		}
 		break;
 
-#ifdef ToCoNet_USE_MOD_NWK_MESSAGE_POOL
-	/*
-	 * メッセージプールを受信
-	 */
-	case E_EVENT_TOCONET_NWK_MESSAGE_POOL:
-		if (u32arg) {
-			tsToCoNet_MsgPl_Entity *pInfo = (void*)u32arg;
-			int i;
-
-			uint8 u8buff[TOCONET_MOD_MESSAGE_POOL_MAX_MESSAGE+1];
-			memcpy(u8buff, pInfo->au8Message, pInfo->u8MessageLen); // u8Message にデータ u8MessageLen にデータ長
-			u8buff[pInfo->u8MessageLen] = 0;
-
-			// UART にメッセージ出力
-			if (pInfo->bGotData) { // empty なら FALSE になる
-				V_PRINTF(LB"---MSGPOOL sl=%d ln=%d msg=",
-						pInfo->u8Slot,
-						pInfo->u8MessageLen
-						);
-
-				SPRINTF_vRewind();
-				for (i = 0; i < pInfo->u8MessageLen; i++) {
-					vfPrintf(SPRINTF_Stream, "%02X", u8buff[i]);
-				}
-				V_PRINTF("%s", SPRINTF_pu8GetBuff());
-
-#ifdef USE_LCD
-				V_PRINTF_LCD("%02x:%s\r\n", u8seq++, SPRINTF_pu8GetBuff());
-				vLcdRefresh();
-#endif
-
-				V_PRINTF("---");
-			} else {
-				V_PRINTF(LB"---MSGPOOL sl=%d EMPTY ---",
-						pInfo->u8Slot
-						);
-#ifdef USE_LCD
-				V_PRINTF_LCD("%02x: EMPTY\r\n", u8seq++);
-				vLcdRefresh();
-#endif
-			}
-
-			// 受信スロットのマスクを外す
-			sAppData.u8MsgMsk &= ~(1 << pInfo->u8Slot);
-
-			// 要求スロットが全部そろったら、終了状態へ遷移
-			if (sAppData.u8MsgMsk == 0) {
-				sAppData.i8NwState |= E_NWK_MSG_GOT_MASK;
-				ToCoNet_Event_Process(E_EVENT_APP_GET_IC_INFO, pInfo->bGotData, vProcessEvCore); // vProcessEvCore にイベント送信
-			}
-		}
-		break;
-#endif
-
 	default:
 		break;
 	}
@@ -729,25 +681,8 @@ uint8 cbToCoNet_u8HwInt(uint32 u32DeviceId, uint32 u32ItemBitmap) {
  *
  ****************************************************************************/
 static void vInitHardware(int f_warm_start) {
-	// LED's
-	vPortAsOutput(PORT_KIT_LED1);
-	vPortAsOutput(PORT_KIT_LED2);
-
-	vPortSetHi(PORT_KIT_LED1);
-	vPortSetHi(PORT_KIT_LED2);
-
-	vPortAsInput(PORT_KIT_SW1);
-	vPortAsInput(PORT_KIT_SW2);
-	vPortAsInput(DIO_BUTTON);
-
-	// いずれかのボタンが押されていた場合、設定モードとして動作する
-	if (!f_warm_start && (~u32AHI_DioReadInput() & PORT_INPUT_MASK)) {
-		sAppData.bConfigMode = TRUE;
-	}
-
 	// Serial Port
 	vSerialInit();
-
 	// I2C
 	vSMBusInit();
 }
@@ -795,73 +730,6 @@ void vSerialInit(void) {
  * NOTES:
  ****************************************************************************/
 static void vHandleSerialInput() {
-	// handle UART command
-	while (!SERIAL_bRxQueueEmpty(sSerPort.u8SerialPort)) {
-		int16 i16Char;
-
-		i16Char = SERIAL_i16RxChar(sSerPort.u8SerialPort);
-
-		// process
-		if (i16Char >=0 && i16Char <= 0xFF) {
-			switch (i16Char) {
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				memset(&sAppData.sFlash.sData, 0, sizeof(tsFlashApp));
-				sAppData.sFlash.sData.u16Id = i16Char - '0';
-				if (bFlash_Write(&sAppData.sFlash, FLASH_SECTOR_NUMBER - 1, 0)) {
-					V_PRINTF( LB "Flash Saved (ID=%d)... RESETTING", sAppData.sFlash.sData.u16Id);
-					vWait(100000);
-					vAHI_SwReset();
-				} else {
-					V_PRINTF( LB "Failed to save flash...");
-				}
-				break;
-
-			case 'i':
-				vDispInfo(&sSerStream, (tsToCoNet_NwkLyTr_Context *)(sAppData.pContextNwk));
-				break;
-
-			case '>':
-				sToCoNet_AppContext.u8Channel++;
-				if (sToCoNet_AppContext.u8Channel > 25)
-					sToCoNet_AppContext.u8Channel = 0;
-				ToCoNet_vRfConfig();
-				V_PRINTF(LB"channel set to %d.", sToCoNet_AppContext.u8Channel);
-				break;
-
-			case '<':
-				sToCoNet_AppContext.u8Channel--;
-				if (sToCoNet_AppContext.u8Channel < 11)
-					sToCoNet_AppContext.u8Channel = 25;
-				ToCoNet_vRfConfig();
-				V_PRINTF(LB"channel set to %d.", sToCoNet_AppContext.u8Channel);
-				break;
-
-			case 'd': case 'D':
-				_C {
-					static uint8 u8DgbLvl;
-
-					u8DgbLvl++;
-					if(u8DgbLvl > 5) u8DgbLvl = 0;
-					ToCoNet_vDebugLevel(u8DgbLvl);
-
-					V_PRINTF(LB"set NwkCode debug level to %d.", u8DgbLvl);
-				}
-				break;
-
-			default:
-				break;
-			}
-		}
-	}
 }
 
 /****************************************************************************/
