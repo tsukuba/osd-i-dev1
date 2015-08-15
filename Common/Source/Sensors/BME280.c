@@ -2,7 +2,7 @@
 #include "BME280.h"
 
 BME280State state;
-BME280RawData raw;
+static BME280RawData raw;
 static int32 t_fine;
 
 // Trim Data
@@ -168,8 +168,8 @@ uint32 GetHumidity_BME280() {
 	if (state != BME280_READY) return 0;
 
 	v_x1 = (t_fine - ((int32)76800));
-	v_x1 = (((((raw.Hum_raw << 14> - (((int32)dig_H4) << 20) - (((int32)dig_H5) * v_x1)) + ((int32)16384)) >> 15) *
-			(((((((v_x1 * ((int32)dig_H6)) >> 10) * (((v_x1 * (int32)dig_H3)) >> 11) + ((int32)32768))) >> 10) + ((int32)2097152)) * ((int32)dig_H2) + 8192) >> 14));
+	v_x1 = (((((raw.Hum_raw << 14) -(((int32)dig_H4) << 20) - (((int32)dig_H5) * v_x1)) + ((int32)16384)) >> 15) *
+			(((((((v_x1 * ((int32)dig_H6)) >> 10) * (((v_x1 * ((int32)dig_H3)) >> 11) + ((int32)32768))) >> 10) + ((int32)2097152)) * ((int32)dig_H2) + 8192) >> 14));
 	v_x1 = (v_x1 - (((((v_x1 >> 15) * (v_x1 >> 15)) >> 7) * ((int32)dig_H1)) >> 4));
 	v_x1 = (v_x1 < 0 ? 0 : v_x1);
 	v_x1 = (v_x1 > 419430400 ? 419430400 : v_x1);
@@ -214,5 +214,5 @@ uint8 ToArray_BME280(BME280Data *data, uint8 *output, uint8 startidx) {
 	output[start++] = data->Pressure >> 16;
 	output[start++] = data->Pressure >> 24;
 	// 差分=書き込んだ分
-	return startidx - start;
+	return start - startidx;
 }
