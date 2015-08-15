@@ -337,25 +337,6 @@ static void vProcessEvCore(tsEvent *pEv, teEvent eEvent, uint32 u32evarg) {
 					ptr += ToArray_BME280(&b, data, ptr);
 					ShowBinary(data, ptr);
 					ptr = BuildPacket(2, data, ptr, packet);
-					/*// ペイロードの準備
-					packet[ptr++] = 0x39; // head
-					packet[ptr++] = 0x02; //op1
-					packet[ptr++] = 0x00; //op2
-					packet[ptr++] = 0x06; //l1
-					packet[ptr++] = 0x00; //l2
-					packet[ptr++] = 0x01; //sid1
-					packet[ptr++] = 0x00; //sid2
-					AM2320Data d;
-					ZeroMemory(&d, sizeof(d));
-					int x;
-					for (x = 0; x <= 5; x++) {
-						if (GetData_AM2320(&d) == TRUE) break;
-					}
-					//V_PRINTF(LB "AM: %d, %d" LB, d.Humidity, d.Temp);
-					ptr += ToArray_AM2320(&d, packet, ptr);
-					uint16 crc = CRC16Calc(packet, ptr);
-					packet[ptr++] = crc & 0xFF;
-					packet[ptr++] = crc >> 8;*/
 					ShowBinary(packet, ptr);
 					memcpy(sTx.auData, packet, sizeof(uint8)*ptr);
 					sTx.u8Len = sizeof(uint8) * ptr; // パケットのサイズ
